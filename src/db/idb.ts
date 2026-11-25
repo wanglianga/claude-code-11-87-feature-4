@@ -1,16 +1,17 @@
 // ============================================================
 // IndexedDB 轻量封装
 // stores:
-//   localComments  离线/本地审阅意见（按 commentId 合并）
-//   drafts         回执草案（离线可写，联网提交）
-//   receipts       回执账（追加）
-//   packages       物化签名交付包
-//   audit          审计事件（追加）
-//   kv              服务端状态快照 / 会话
+//   localComments    离线/本地审阅意见（按 commentId 合并）
+//   drafts           回执草案（离线可写，联网提交）
+//   receipts         回执账（追加）
+//   packages         物化签名交付包
+//   audit            审计事件（追加）
+//   samplingBatches  抽检批次（抽样框/覆盖/观测/未检原因，按 batchId）
+//   kv               服务端状态快照 / 会话
 // ============================================================
 
 const DB_NAME = 'dcp-delivery-contract';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 export const STORES = {
   localComments: 'localComments',
@@ -18,6 +19,7 @@ export const STORES = {
   receipts: 'receipts',
   packages: 'packages',
   audit: 'audit',
+  samplingBatches: 'samplingBatches',
   kv: 'kv',
 } as const;
 
@@ -43,6 +45,9 @@ export function openDb(): Promise<IDBDatabase> {
       }
       if (!db.objectStoreNames.contains(STORES.audit)) {
         db.createObjectStore(STORES.audit, { keyPath: 'eventId' });
+      }
+      if (!db.objectStoreNames.contains(STORES.samplingBatches)) {
+        db.createObjectStore(STORES.samplingBatches, { keyPath: 'batchId' });
       }
       if (!db.objectStoreNames.contains(STORES.kv)) {
         db.createObjectStore(STORES.kv, { keyPath: 'key' });

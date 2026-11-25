@@ -430,6 +430,32 @@ table.data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .pkg-id { font-family: var(--mono); font-weight: 750; font-size: 13px; }
 .pkg-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px,1fr)); gap: 14px; }
 
+/* ---------------- 抽检覆盖校正 ---------------- */
+.batch-tab {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
+  border: 1.5px solid var(--line); background: #fff; border-radius: 11px;
+  padding: 9px 14px; cursor: pointer; transition: all .15s; min-width: 168px;
+}
+.batch-tab:hover { border-color: var(--brand); box-shadow: var(--shadow); }
+.batch-tab.active { border-color: var(--brand); background: var(--brand-soft); box-shadow: 0 0 0 3px rgba(27,95,208,.12); }
+.batch-tab-id { font-family: var(--mono); font-size: 11.5px; color: var(--ink-3); }
+.batch-tab-name { font-weight: 700; font-size: 13.5px; color: var(--ink); }
+.warn-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 9px; }
+.warn-item { display: flex; gap: 9px; align-items: flex-start; font-size: 13px; color: var(--ink-2); background: var(--warn-soft); border: 1px solid #efd3a6; border-radius: 9px; padding: 9px 12px; }
+.warn-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--warn); margin-top: 6px; flex: 0 0 8px; }
+.tone-purple { color: var(--purple); }
+
+/* 批次编辑器 */
+.editor { display: flex; flex-direction: column; gap: 18px; }
+.editor-section h4 { font-size: 13.5px; margin-bottom: 10px; color: var(--brand-deep); }
+.editor-rows { display: flex; flex-direction: column; gap: 8px; }
+.editor-row { display: grid; grid-template-columns: 1.1fr 1fr 1.4fr .8fr .8fr .9fr auto; gap: 8px; align-items: center; }
+.editor-row.wide { grid-template-columns: 1.1fr .9fr 1.3fr .7fr 1.4fr .8fr .9fr auto; }
+.editor-row .input, .editor-row .select { padding: 7px 9px; font-size: 12.5px; min-width: 0; }
+@media (max-width: 1080px) {
+  .editor-row, .editor-row.wide { grid-template-columns: 1fr 1fr; }
+}
+
 .loading-screen { min-height: 100vh; display: grid; place-items: center; color: var(--ink-2); }
 .loading-card { text-align: center; }
 .loading-card .spin { width: 34px; height: 34px; border-width: 3px; }

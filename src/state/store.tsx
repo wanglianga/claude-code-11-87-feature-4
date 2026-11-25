@@ -6,6 +6,7 @@ import type {
   AuditEvent,
   Authorization,
   DeliveryPackage,
+  InspectionBatch,
   Purpose,
   Receipt,
   ReceiptDraft,
@@ -14,6 +15,7 @@ import type {
   ServerState,
 } from '../types';
 import { ACCOUNTS, buildSeedServerState, getAttachments, PENDING_R2 } from '../domain/seed';
+import { buildSampleBatches } from '../domain/sampling';
 import { compileProjection } from '../domain/compiler';
 import { buildDeliveryPackage } from '../domain/package';
 import { findLicense, recheckForRelease } from '../domain/auth';
@@ -24,7 +26,15 @@ import { uid } from '../domain/hash';
 import { workerApi } from './workerClient';
 import { idbBulkPut, idbDelete, idbGetAll, idbPut, kvGet, kvSet, STORES, wipeAll } from '../db/idb';
 
-export type TabKey = 'scenario' | 'studio' | 'packages' | 'review' | 'receipts' | 'history' | 'contracts';
+export type TabKey =
+  | 'scenario'
+  | 'studio'
+  | 'packages'
+  | 'review'
+  | 'receipts'
+  | 'history'
+  | 'contracts'
+  | 'sampling';
 
 interface Notice {
   kind: 'ok' | 'err' | 'info';
@@ -43,6 +53,7 @@ interface StoreState {
   receipts: Receipt[];
   packages: DeliveryPackage[];
   audit: AuditEvent[];
+  samplingBatches: InspectionBatch[];
   notice: Notice | null;
 }
 
@@ -93,6 +104,9 @@ interface StoreValue extends StoreState {
     packageId?: string;
   }) => Promise<Receipt>;
   adjudicate: (ledgerKey: string, outcome: Adjudication['outcome'], rationale: string) => Promise<void>;
+
+  saveSamplingBatch: (batch: InspectionBatch) => Promise<void>;
+  deleteSamplingBatch: (batchId: string) => Promise<void>;
 }
 
 const StoreContext = createContext<StoreValue | null>(null);
@@ -114,6 +128,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     receipts: [],
     packages: [],
     audit: [],
+    samplingBatches: [],
     notice: null,
   });
 
@@ -134,14 +149,21 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         await kvSet('attachments', attachments);
       }
 
-      let [localComments, drafts, receipts, packages, audit] = await Promise.all([
+      let [localComments, drafts, receipts, packages, audit, samplingBatches] = await Promise.all([
         idbGetAll<ReviewComment>(STORES.localComments),
         idbGetAll<ReceiptDraft>(STORES.drafts),
         idbGetAll<Receipt>(STORES.receipts),
         idbGetAll<DeliveryPackage>(STORES.packages),
         idbGetAll<AuditEvent>(STORES.audit),
+        idbGetAll<InspectionBatch>(STORES.samplingBatches),
       ]);
       audit = audit.sort((a, b) => +new Date(b.at) - +new Date(a.at));
+
+      // 首次运行：播种甲乙承包商抽检样例（同一登记管网 NET-100）
+      if (samplingBatches.length === 0) {
+        samplingBatches = buildSampleBatches();
+        await idbBulkPut(STORES.samplingBatches, samplingBatches);
+      }
 
       // 首次运行：预物化三个角色的 R1 修订1 签名交付包
       if (packages.length === 0) {
@@ -164,6 +186,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         receipts,
         packages,
         audit,
+        samplingBatches,
         sessionAccountId: sessionAccountId ?? null,
       }));
     })();
@@ -842,6 +865,54 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [state.server, account, saveServer, pushAudit, notify],
   );
 
+  // ---------------- 抽检批次（抽样框 / 覆盖 / 观测 / 未检原因） ----------------
+  const saveSamplingBatch = useCallback(
+    async (batch: InspectionBatch) => {
+      await idbPut(STORES.samplingBatches, batch);
+      setState((s) => {
+        const exists = s.samplingBatches.some((b) => b.batchId === batch.batchId);
+        return {
+          ...s,
+          samplingBatches: exists
+            ? s.samplingBatches.map((b) => (b.batchId === batch.batchId ? batch : b))
+            : [batch, ...s.samplingBatches],
+        };
+      });
+      await pushAudit({
+        type: 'sampling_batch_saved',
+        actorAccountId: account?.accountId ?? 'u-admin',
+        actorName: account?.displayName ?? '平台交付管理员',
+        summary: `保存抽检批次 ${batch.batchId}（${batch.contractor}）：计划框 ${batch.plannedSegments.length} 段、覆盖区间 ${batch.coverage.length} 条、现场观测 ${batch.observations.length} 条。`,
+        detail: {
+          batchId: batch.batchId,
+          targetNetworkId: batch.targetNetworkId,
+          planned: batch.plannedSegments.length,
+          coverage: batch.coverage.length,
+          observations: batch.observations.length,
+          uninspected: batch.uninspected.length,
+        },
+      });
+      notify('ok', `抽检批次 ${batch.batchId} 已保存（IndexedDB 持久化）。`);
+    },
+    [account, pushAudit, notify],
+  );
+
+  const deleteSamplingBatch = useCallback(
+    async (batchId: string) => {
+      await idbDelete(STORES.samplingBatches, batchId);
+      setState((s) => ({ ...s, samplingBatches: s.samplingBatches.filter((b) => b.batchId !== batchId) }));
+      await pushAudit({
+        type: 'sampling_batch_deleted',
+        actorAccountId: account?.accountId ?? 'u-admin',
+        actorName: account?.displayName ?? '平台交付管理员',
+        summary: `抽检批次 ${batchId} 已删除。`,
+        detail: { batchId },
+      });
+      notify('info', `抽检批次 ${batchId} 已删除。`);
+    },
+    [account, pushAudit, notify],
+  );
+
   const value: StoreValue = {
     ...state,
     account,
@@ -870,6 +941,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     submitDraft,
     addReceipt,
     adjudicate,
+    saveSamplingBatch,
+    deleteSamplingBatch,
   };
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;

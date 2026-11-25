@@ -429,7 +429,9 @@ export type AuditEventType =
   | 'comments_merged'
   | 'receipt_registered'
   | 'conflict_adjudicated'
-  | 'offline_edit_blocked';
+  | 'offline_edit_blocked'
+  | 'sampling_batch_saved'
+  | 'sampling_batch_deleted';
 
 export interface AuditEvent {
   eventId: string;
@@ -447,6 +449,165 @@ export interface AuditEvent {
     receiverAccountId: string;
     revision: number;
   };
+}
+
+// ---------------- 抽检覆盖与缺陷密度估计 ----------------
+
+/** 估计层：按管龄 / 材质 / 风险等级划分的分层（分层校准要求层内可比） */
+export interface SamplingStratum {
+  stratumId: string;
+  label: string;
+  /** 分层依据，如 管龄段 / 材质 / 风险等级 */
+  basis: string;
+  /** 该层在目标总体（登记管网）中的总长度（公里），各层之和=目标总体长度 */
+  populationLengthKm: number;
+}
+
+/** 计划检查管段框：抽样框中的一个抽选单元 */
+export interface PlannedSegment {
+  segmentId: string;
+  stratumId: string;
+  /** 管段在登记管网中的定位描述（桩号 / 管段编号） */
+  location: string;
+  /** 计划检查长度（公里） */
+  plannedLengthKm: number;
+  /** 选段原因：风险导向 / 分层随机 / 群众举报复核 / 临时加检 … */
+  selectionReason: string;
+  /**
+   * 已知入样（选段）概率 π。
+   * 临时加检没有受控抽样概率时为 null —— 不能补零，也不能据此代表总体。
+   */
+  inclusionProbability: number | null;
+  /** sampled=受控抽样框内单元；ad_hoc=无概率临时加检，仅作补充证据 */
+  kind: 'sampled' | 'ad_hoc';
+}
+
+/** 实际检查覆盖区间：同一线性参照系（公里桩号）上的实测起止，支持求并集去重 */
+export interface CoverageInterval {
+  intervalId: string;
+  segmentId: string;
+  stratumId: string;
+  fromKm: number;
+  toKm: number;
+}
+
+/** 未检部分：计划框内未实际覆盖的长度与原因（空白覆盖不得补零） */
+export interface UninspectedPart {
+  partId: string;
+  segmentId: string;
+  /** 未检长度（公里） */
+  lengthKm: number;
+  /** 未检原因：交通导改 / 仪器故障 / 权属阻挡 / 工期边界 … */
+  reason: string;
+}
+
+/** 现场缺陷观测区间，观测器将其映射到实际覆盖长度并去重叠 */
+export interface DefectObservation {
+  observationId: string;
+  segmentId: string;
+  stratumId: string;
+  /** 同一线性参照系上的缺陷起止（公里桩号）；点缺陷可记为等长起止 */
+  fromKm: number;
+  toKm: number;
+  /** 关联缺陷编号（可选） */
+  defectRef?: string;
+  note?: string;
+}
+
+/** 一次承包商抽检批次：保存抽样框、实际覆盖、选段原因、抽样概率与未检原因 */
+export interface InspectionBatch {
+  batchId: string;
+  /** 承包商 / 检测单位 */
+  contractor: string;
+  projectId: string;
+  /** 登记管网范围标识：两条估计路线必须针对同一目标总体 */
+  targetNetworkId: string;
+  targetNetworkName: string;
+  inspectedAt: string;
+  /** 分层定义（层长度之和 = 目标总体长度） */
+  strata: SamplingStratum[];
+  /** 计划检查管段框 */
+  plannedSegments: PlannedSegment[];
+  /** 实际检查覆盖区间 */
+  coverage: CoverageInterval[];
+  /** 未检部分（含原因） */
+  uninspected: UninspectedPart[];
+  /** 现场缺陷观测 */
+  observations: DefectObservation[];
+  note?: string;
+}
+
+export type EstimatorMethod = 'design' | 'calibrated';
+
+/** 单层估计明细 */
+export interface StratumEstimate {
+  stratumId: string;
+  label: string;
+  basis: string;
+  populationLengthKm: number;
+  /** 去重后实际覆盖长度（公里） */
+  coveredLengthKm: number;
+  plannedLengthKm: number;
+  /** 现场观察到的缺陷数（去重叠、且落在实际覆盖内） */
+  rawDefectCount: number;
+  /** 覆盖区间重叠被剔除的长度（公里） */
+  overlapRemovedLengthKm: number;
+  /** 该层使用的代表入样概率（无概率层为 null） */
+  inclusionProbability: number | null;
+  /** 实际采用的权重（设计权重=1/π；校准权重按层内覆盖率推导） */
+  weight: number | null;
+  /** 加权后缺陷数（对目标总体该层的估计） */
+  weightedDefectCount: number | null;
+  /** 覆盖段上的观测缺陷率（处/公里），未覆盖层为 null */
+  observedRatePerKm: number | null;
+  /** 对总体密度（处/公里）的贡献 */
+  densityContribution: number | null;
+  /** 对总体率估计的方差贡献（率尺度） */
+  varianceContribution: number | null;
+  /** 该层覆盖率 = 去重覆盖 / 层总体长度 */
+  coverageRatio: number;
+  /** 校准法下该层无任何覆盖、率值借自其他层（依赖层内可比假设） */
+  imputed: boolean;
+}
+
+export interface DensityEstimate {
+  method: EstimatorMethod;
+  targetNetworkId: string;
+  targetNetworkName: string;
+  targetPopulationLengthKm: number;
+  /** 去重后实际覆盖总长度（公里） */
+  totalCoveredLengthKm: number;
+  /** 覆盖率 = 去重覆盖 / 目标总体长度 */
+  coverageRatio: number;
+  /** 未覆盖长度（公里，单列，绝不补零） */
+  uncoveredLengthKm: number;
+  /** 现场观察数（去重叠且落在覆盖内、受控抽样部分） */
+  rawObservedCount: number;
+  /** 无抽样概率的临时加检观察数（仅补充证据，不入总体估计） */
+  adHocObservedCount: number;
+  /** 临时加检覆盖长度（公里，仅补充证据） */
+  adHocCoveredLengthKm: number;
+  /** 因缺陷区间重叠被合并的重复观测数 */
+  overlapRemovedDefectCount: number;
+  /** 落在任何覆盖区间之外、被剔除的观测数 */
+  outsideCoverageCount: number;
+  /** 目标总体缺陷总数估计（处） */
+  weightedDefectEstimate: number | null;
+  /** 每公里目标管网缺陷率（处/公里） */
+  densityPerKm: number | null;
+  /** 率估计方差与标准误 */
+  variance: number | null;
+  stdError: number | null;
+  /** 变异系数（%） */
+  cvPercent: number | null;
+  confidenceLevel: number;
+  ciLower: number | null;
+  ciUpper: number | null;
+  strata: StratumEstimate[];
+  /** 过程告警（无概率、未覆盖、跨层借用等） */
+  warnings: string[];
+  /** 是否可对目标总体给出可识别估计（没有任何受控概率层时为 false） */
+  identifiable: boolean;
 }
 
 // ---------------- 持久化根状态 ----------------

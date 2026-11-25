@@ -11,10 +11,12 @@ import Review from './components/Review';
 import Receipts from './components/Receipts';
 import History from './components/History';
 import Contracts from './components/Contracts';
+import Sampling from './components/Sampling';
 import { Toggle } from './components/ui';
 
 const TABS: { key: TabKey; label: string; ico: string; title: string; crumb: string }[] = [
   { key: 'scenario', label: '场景推演', ico: '🧭', title: '端到端场景推演', crumb: 'P / R1 · 修订1→2 · 离线标注 · 撤销 · 冲突裁定' },
+  { key: 'sampling', label: '抽检覆盖校正', ico: '📏', title: '抽检覆盖校正后的缺陷密度', crumb: '抽样框/实际覆盖/选段概率 · HT 设计权重 vs 分层校准 · 未覆盖不补零' },
   { key: 'studio', label: '交付编译', ico: '⚙️', title: '授权投影编译器', crumb: '字段契约 × 六维授权交集 × WebWorker' },
   { key: 'packages', label: '签名交付包', ico: '📦', title: '物化包与释放闸门', crumb: '固定报告修订与许可版本 · 包校验 · 重复交付' },
   { key: 'review', label: '离线审阅', ico: '✍️', title: '离线审阅工作区', crumb: '带基线版本的意见 / 回执草案 · 按意见ID合并' },
@@ -138,6 +140,7 @@ export default function App() {
 
         <main className="content">
           {s.tab === 'scenario' && <ScenarioGuide />}
+          {s.tab === 'sampling' && <Sampling />}
           {s.tab === 'studio' && <Studio />}
           {s.tab === 'packages' && <Packages />}
           {s.tab === 'review' && <Review />}

@@ -140,6 +140,25 @@ describe('浏览器全流程冒烟（jsdom + IndexedDB）', () => {
     fireEvent.click(screen.getByRole('button', { name: /契约与授权/ }));
     await bodyMatches(/字段契约注册表/);
     expect(document.body.textContent).toMatch(/授权六维交集模拟器/);
+
+    // 17) 抽检覆盖校正工作台：样例甲乙对比、两种估计、批次编辑器
+    fireEvent.click(screen.getByRole('button', { name: /抽检覆盖校正/ }));
+    await bodyMatches(/样例核验：甲 vs 乙/);
+    // 现场观察与加权估计分区呈现
+    expect(document.body.textContent).toMatch(/现场观察（未加权/);
+    expect(document.body.textContent).toMatch(/加权总体估计/);
+    // 未覆盖不补零、临时加检补充证据
+    expect(document.body.textContent).toMatch(/未覆盖长度（不补零）/);
+    expect(document.body.textContent).toMatch(/临时加检：补充证据/);
+    // 默认设计权重：甲 0.16 处/km、乙 0.2655 处/km（同一 100km 总体）
+    await bodyMatches(/0\.16/);
+    // 切换到分层校准
+    fireEvent.click(screen.getByRole('button', { name: /分层校准/ }));
+    await bodyMatches(/imputed 借用|借用合并率/);
+    // 打开新建批次编辑器并取消
+    fireEvent.click(screen.getByRole('button', { name: /新建批次/ }));
+    await bodyMatches(/批次元信息/);
+    fireEvent.click(screen.getByRole('button', { name: /取消/ }));
   }, 120000);
 
   it('刷新式重新挂载后 IndexedDB 数据仍在（持久化）', async () => {
